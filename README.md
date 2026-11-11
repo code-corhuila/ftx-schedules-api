@@ -35,10 +35,17 @@ subtracted here: that is the reservation-service (`GET /availability`).
 
 ## Who can change a schedule
 
-The API Gateway validates the administrator JWT and overwrites `X-User-Id` and `X-User-Role`.
-This service refuses `/api/v1/admin/**` without them (401) or with another role (403). Every
-change is logged on the `audit` logger with the administrator id and the hours before and after
-(FR-036).
+`/api/v1/admin/**` needs the administrator access token in `Authorization: Bearer <token>`, and
+this service **checks it itself** (ADR-012): RS256, signed by a key of the JWKS that
+`ftx-customers-api` publishes (`GET /api/v1/auth/jwks`), issuer `ftx-customers-api`, not expired,
+with `sub`, `iat`, `exp`, `jti` and `roles`. No valid token: 401. Another role: 403. The keys
+cannot be fetched: 503, and nothing is changed. Public reads never need the keys.
+
+`X-User-Id` and `X-User-Role` are **ignored**: the port of this API is published on the host, so a
+client could send them, and `ftx-docs/07-api/authentication.md` says a service must never trust
+client-supplied identity headers. The gateway forwards the `Authorization` header unchanged. Every
+change is logged on the `audit` logger with the administrator id (the `sub` of the token) and the
+hours before and after (FR-036).
 
 ## Architecture (hexagonal)
 
@@ -63,6 +70,8 @@ adapter/config/          wiring; writes run in one transaction
 | `SCHEDULES_DB_PASSWORD` | none (required) | Its password, from `env/<environment>.env` of `ftx-infra-postgres` |
 | `COURTS_API_URL` | `http://ftx-courts-api:8082` | Base URL of `ftx-courts-api` |
 | `COURTS_API_TIMEOUT` | `2s` | Connect and read timeout of that call |
+| `SCHEDULES_AUTH_JWKS_URL` | `http://ftx-customers-api:8081/api/v1/auth/jwks` | Public keys of the administrator tokens (cached by the service) |
+| `SCHEDULES_AUTH_ISSUER` | `ftx-customers-api` | Required `iss` of the tokens |
 | `PORT` | `8085` | HTTP port |
 
 The service never runs migrations: the `schedules` schema belongs to `ftx-schedules-db`.
@@ -92,7 +101,8 @@ mvn verify
 
 - Unit tests of the domain and the use cases (inactive court, closed day, unknown court,
   courts service down), web tests of every response of the contract (including a non-administrator
-  that must be refused), and tests of the `ftx-courts-api` client against a mock server
+  that must be refused, spoofed `X-User-*` headers, expired, foreign and forged tokens, and the
+  keys being unavailable; tokens are signed with a key made for each run), and tests of the `ftx-courts-api` client against a mock server
   (200, 404, 500, correlation id forwarded).
 - Integration tests against a real PostgreSQL with the **real migrations** of the sibling
   `ftx-schedules-db` clone (`-Dschedules.db.dir=...`, default `../ftx-schedules-db`), connected
