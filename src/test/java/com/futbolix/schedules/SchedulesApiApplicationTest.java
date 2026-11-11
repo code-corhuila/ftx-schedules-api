@@ -103,5 +103,10 @@ class SchedulesApiApplicationTest {
     @Test
     void healthReportsTheDatabase() throws Exception {
         mvc.perform(get("/health")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("UP"));
+        // The contract health of court-service.yaml.
+        mvc.perform(get("/api/v1/health")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ok"))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.dependencies.database").value("ok"));
     }
 }

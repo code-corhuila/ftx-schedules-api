@@ -16,6 +16,7 @@ schedules) and HU-RES-001 (availability). Contract: the schedule operations of
 | `GET /api/v1/courts/{id}/bookable-slots?date=YYYY-MM-DD` | Public (the reservation-service calls it) | 200 `BookableSlots`, 400 missing or bad date, 404, 503 |
 | `PUT /api/v1/admin/courts/{id}/schedules/{dayOfWeek}` | `ADMINISTRATOR` | 200 `Schedule`, 400 (time not `HH:mm:ss` or not a whole hour, unknown field, bad day), 401, 403, 404, 422 `INVALID_SCHEDULE` |
 | `DELETE /api/v1/admin/courts/{id}/schedules/{dayOfWeek}` | `ADMINISTRATOR` | 204 (the court is closed that day), 401, 403, 404 |
+| `GET /api/v1/health` | Public | 200 `{ "status": "ok", "timestamp", "dependencies": { "database": "ok" } }` (contract); 503 |
 | `GET /health`, `/health/liveness`, `/health/readiness` | Probes | 200 `UP` |
 
 Times are always `HH:mm:ss`. Bookable slots are the whole hours between opening and closing;
