@@ -130,9 +130,11 @@ public class JdbcScheduleRepositoryIntegrationTest {
     void theApplicationUserCannotChangeTheStructureNorReadTheMigrationHistory() {
         assertThatThrownBy(() -> app.sql("CREATE TABLE schedules.extra (id int)").update())
                 .isInstanceOf(DataAccessException.class)
-                .rootCause().hasMessageContaining("permission denied for schema schedules");
+                .rootCause().isInstanceOf(java.sql.SQLException.class)
+                .extracting(e -> ((java.sql.SQLException) e).getSQLState()).isEqualTo("42501"); // insufficient_privilege, any server language
         assertThatThrownBy(() -> app.sql("SELECT count(*) FROM schedules.flyway_schema_history").query(Long.class).single())
                 .isInstanceOf(DataAccessException.class)
-                .rootCause().hasMessageContaining("permission denied");
+                .rootCause().isInstanceOf(java.sql.SQLException.class)
+                .extracting(e -> ((java.sql.SQLException) e).getSQLState()).isEqualTo("42501"); // insufficient_privilege, any server language
     }
 }
