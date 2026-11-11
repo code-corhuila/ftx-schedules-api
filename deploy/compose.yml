@@ -1,0 +1,33 @@
+# ftx-schedules-api container (Annex J.7).
+#
+# This repository does NOT define a database: the single PostgreSQL instance lives in
+# ftx-infra-postgres, which includes this file:
+#
+#   include:
+#     - path: ../ftx-schedules-api/deploy/compose.yml
+#
+# Operation, from ftx-infra-postgres (the instance must be up and ftx-schedules-db migrated first):
+#   docker compose --env-file env/dev.env up -d --build --wait ftx-schedules-api
+services:
+  ftx-schedules-api:
+    build: ..                               # this repository's Dockerfile
+    image: ftx-schedules-api:local
+    restart: unless-stopped
+    environment:
+      # "postgres" is the service name of the single instance in the platform network.
+      SCHEDULES_DB_URL: jdbc:postgresql://postgres:5432/${PG_DATABASE:?set PG_DATABASE in the env file of ftx-infra-postgres}
+      SCHEDULES_DB_USER: schedules_app
+      SCHEDULES_DB_PASSWORD: ${SCHEDULES_APP_PASSWORD:?set SCHEDULES_APP_PASSWORD in the env file of ftx-infra-postgres}
+      # Court status and price: ftx-courts-api by its service name (ADR-011). Asked per request, so
+      # this container does not wait for it; while it is down, bookable-slots answers 503.
+      COURTS_API_URL: http://ftx-courts-api:8082
+    ports:
+      - "${SCHEDULES_API_PORT:-8085}:8085"
+    networks: [platform]
+
+networks:
+  platform:
+    # One network per environment (PLATFORM_NETWORK in the env file of ftx-infra-postgres), so the
+    # names postgres and ftx-*-api never resolve to a container of another environment.
+    name: ${PLATFORM_NETWORK:-platform}
+    external: true
