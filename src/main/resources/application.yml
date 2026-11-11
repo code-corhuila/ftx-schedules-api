@@ -1,0 +1,47 @@
+# ftx-schedules-api. Every value that changes per environment comes from an environment variable.
+server:
+  port: ${PORT:8085}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: ftx-schedules-api
+  datasource:
+    # schedules_app is created by ftx-infra-postgres and receives schedules_writer from ftx-schedules-db.
+    url: ${SCHEDULES_DB_URL:jdbc:postgresql://postgres:5432/ftx}
+    username: ${SCHEDULES_DB_USER:schedules_app}
+    # No default on purpose: without a password the service does not start.
+    password: ${SCHEDULES_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${SCHEDULES_DB_POOL_SIZE:5}
+  flyway:
+    enabled: false                       # the schema belongs to ftx-schedules-db; this API never migrates
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true   # ScheduleRequest has additionalProperties: false
+  mvc:
+    problemdetails:
+      enabled: false                     # errors use ErrorResponse of _shared.yaml
+
+# Court status and price come from ftx-courts-api inside the platform network.
+courts-api:
+  url: ${COURTS_API_URL:http://ftx-courts-api:8082}
+  timeout: ${COURTS_API_TIMEOUT:2s}
+
+management:
+  endpoints:
+    web:
+      base-path: /                       # GET /health, /health/liveness, /health/readiness
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ecs                       # JSON lines with correlationId (13-operations/observability.md)
