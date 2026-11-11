@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.futbolix.schedules.adapter.in.web.AdministratorTokenVerifier;
+import com.futbolix.schedules.adapter.in.web.TestTokens;
 import com.futbolix.schedules.adapter.out.persistence.JdbcScheduleRepositoryIntegrationTest;
 import com.futbolix.schedules.application.port.out.CourtCatalog;
 import com.futbolix.schedules.domain.CourtInfo;
@@ -22,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -39,6 +42,13 @@ class SchedulesApiApplicationTest {
     static final String ADMIN = "/api/v1/admin/courts/" + COURT_3 + "/schedules/";
 
     @Autowired MockMvc mvc;
+
+    /** Trusts the key of TestTokens instead of fetching the JWKS of ftx-customers-api. */
+    @TestBean AdministratorTokenVerifier administratorTokenVerifier;
+
+    static AdministratorTokenVerifier administratorTokenVerifier() {
+        return TestTokens.verifier();
+    }
     @MockitoBean CourtCatalog courts;
 
     @BeforeAll
@@ -76,17 +86,17 @@ class SchedulesApiApplicationTest {
     @Test
     void anAdministratorChangesAndClosesADay() throws Exception {
         mvc.perform(put(ADMIN + "THU").contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "admin-1").header("X-User-Role", "ADMINISTRATOR")
+                        .header("Authorization", "Bearer " + TestTokens.administrator("admin-1"))
                         .content("{\"openingTime\": \"10:00:00\", \"closingTime\": \"14:00:00\"}"))
                 .andExpect(status().isOk());
         mvc.perform(get("/api/v1/courts/{id}/bookable-slots", COURT_3).param("date", "2026-11-19"))
                 .andExpect(jsonPath("$.slots.length()").value(4));
 
-        mvc.perform(delete(ADMIN + "FRI").header("X-User-Id", "admin-1").header("X-User-Role", "ADMINISTRATOR"))
+        mvc.perform(delete(ADMIN + "FRI").header("Authorization", "Bearer " + TestTokens.administrator("admin-1")))
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/v1/courts/{id}/bookable-slots", COURT_3).param("date", "2026-11-20"))
                 .andExpect(jsonPath("$.slots.length()").value(0));
-        mvc.perform(delete(ADMIN + "FRI").header("X-User-Id", "admin-1").header("X-User-Role", "ADMINISTRATOR"))
+        mvc.perform(delete(ADMIN + "FRI").header("Authorization", "Bearer " + TestTokens.administrator("admin-1")))
                 .andExpect(status().isNotFound());
     }
 

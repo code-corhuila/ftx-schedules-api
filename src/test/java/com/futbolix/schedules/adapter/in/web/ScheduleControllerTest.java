@@ -36,7 +36,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(controllers = {ScheduleController.class, AdminScheduleController.class})
-@Import({ApiExceptionHandler.class, CorrelationIdFilter.class, AdministratorInterceptor.class, WebConfiguration.class})
+@Import({ApiExceptionHandler.class, CorrelationIdFilter.class, AdministratorInterceptor.class, WebConfiguration.class,
+        TestVerifierConfiguration.class})
 class ScheduleControllerTest {
 
     static final UUID COURT_1 = UUID.fromString("c0000000-0000-4000-8000-000000000001");
@@ -101,7 +102,7 @@ class ScheduleControllerTest {
         when(saveSchedule.putSchedule(eq(COURT_1), eq(DayCode.MON), eq(LocalTime.of(8, 0)), eq(LocalTime.of(20, 0)), eq("admin-7")))
                 .thenReturn(monday(8, 20));
         mvc.perform(put(ADMIN_URL).contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR")
+                        .header("Authorization", "Bearer " + TestTokens.administrator("admin-7"))
                         .content("{\"openingTime\": \"08:00:00\", \"closingTime\": \"20:00:00\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.openingTime").value("08:00:00"));
@@ -111,7 +112,7 @@ class ScheduleControllerTest {
     @Test
     void anotherRoleOrNoIdentityChangesNothing() throws Exception {
         mvc.perform(put(ADMIN_URL).contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "user-2").header("X-User-Role", "CUSTOMER")
+                        .header("Authorization", "Bearer " + TestTokens.withRole("user-2", "CUSTOMER"))
                         .content("{\"openingTime\": \"08:00:00\", \"closingTime\": \"20:00:00\"}"))
                 .andExpect(status().isForbidden());
         mvc.perform(delete(ADMIN_URL)).andExpect(status().isUnauthorized());
@@ -119,34 +120,53 @@ class ScheduleControllerTest {
         verify(saveSchedule, never()).deleteSchedule(any(), any(), any());
     }
 
+    /**
+     * Regression: the API used to trust X-User-Id / X-User-Role, and its port is published on the
+     * host, so anyone could change the opening hours by sending those two headers.
+     */
+    @Test
+    void spoofedHeadersAndBadTokensChangeNothing() throws Exception {
+        mvc.perform(put(ADMIN_URL).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "attacker").header("X-User-Role", "ADMINISTRATOR")
+                        .content("{\"openingTime\": \"08:00:00\", \"closingTime\": \"20:00:00\"}"))
+                .andExpect(status().isUnauthorized());
+        for (String token : new String[] {TestTokens.expired("admin-7"), TestTokens.fromIssuer("admin-7", "someone-else"),
+                TestTokens.signedByAnotherKey("admin-7"), "not-a-jwt"}) {
+            mvc.perform(delete(ADMIN_URL).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error").value("UNAUTHORIZED"));
+        }
+        verify(saveSchedule, never()).putSchedule(any(), any(), any(), any(), any());
+        verify(saveSchedule, never()).deleteSchedule(any(), any(), any());
+    }
+
     @Test
     void badInputIs400AndAnInvertedScheduleIs422() throws Exception {
         mvc.perform(put(ADMIN_URL).contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR")
+                        .header("Authorization", "Bearer " + TestTokens.administrator("admin-7"))
                         .content("{\"openingTime\": \"8:00\", \"closingTime\": \"20:00:00\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.details[0].field").value("openingTime"));
         mvc.perform(put("/api/v1/admin/courts/" + COURT_1 + "/schedules/MONDAY").contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR")
+                        .header("Authorization", "Bearer " + TestTokens.administrator("admin-7"))
                         .content("{\"openingTime\": \"08:00:00\", \"closingTime\": \"20:00:00\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.details[0].field").value("dayOfWeek"));
         mvc.perform(put(ADMIN_URL).contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR")
+                        .header("Authorization", "Bearer " + TestTokens.administrator("admin-7"))
                         .content("{\"openingTime\": \"08:00:00\", \"closingTime\": \"20:00:00\", \"note\": \"x\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.details[0].field").value("note"));
 
         when(saveSchedule.putSchedule(any(), any(), any(), any(), any())).thenThrow(new InvalidScheduleException());
         mvc.perform(put(ADMIN_URL).contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR")
+                        .header("Authorization", "Bearer " + TestTokens.administrator("admin-7"))
                         .content("{\"openingTime\": \"22:00:00\", \"closingTime\": \"06:00:00\"}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("INVALID_SCHEDULE"));
     }
 
     @Test
     void deletingIs204AndAMissingDayIs404() throws Exception {
-        mvc.perform(delete(ADMIN_URL).header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR"))
+        mvc.perform(delete(ADMIN_URL).header("Authorization", "Bearer " + TestTokens.administrator("admin-7")))
                 .andExpect(status().isNoContent());
         org.mockito.Mockito.doThrow(new ScheduleNotFoundException()).when(saveSchedule).deleteSchedule(any(), any(), any());
-        mvc.perform(delete(ADMIN_URL).header("X-User-Id", "admin-7").header("X-User-Role", "ADMINISTRATOR"))
+        mvc.perform(delete(ADMIN_URL).header("Authorization", "Bearer " + TestTokens.administrator("admin-7")))
                 .andExpect(status().isNotFound());
     }
 }
